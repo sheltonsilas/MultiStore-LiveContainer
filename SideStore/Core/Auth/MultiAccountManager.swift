@@ -111,7 +111,9 @@ public final class MultiAccountManager
 
     /// Files the credentials a completed sign-in produced under the new account's namespace,
     /// so signing into an additional account never costs us the one that was already here.
-    public func registerCredentials(for result: SignInResult)
+    ///
+    /// Not `public`: `SignInResult` is module-internal.
+    func registerCredentials(for result: SignInResult)
     {
         let identifier = result.team.account?.identifier ?? result.team.identifier
         guard !identifier.isEmpty else { return }

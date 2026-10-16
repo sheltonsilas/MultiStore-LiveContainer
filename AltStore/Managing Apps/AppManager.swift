@@ -623,8 +623,10 @@ final class AppManager: ObservableObject, @unchecked Sendable
                 do {
                     try await self.pipelineRunner.perform(partition.apps.map { .refresh($0) }, handler: handler, group: group)
                 } catch {
+                    // Cancellation is the one failure that must abort the whole refresh rather than
+                    // being treated as one account's problem. `OperationError.cancelled` is itself a
+                    // CancellationError, so this covers both spellings.
                     if Task.isCancelled || error is CancellationError { throw error }
-                    if let operationError = error as? OperationError, case .cancelled = operationError { throw error }
                     
                     // Failure isolation: this account's apps fail, the remaining accounts still refresh.
                     debugLog("[AppManager] performRefreshes: a refresh pass failed: \(error)")
