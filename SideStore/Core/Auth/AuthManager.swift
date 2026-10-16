@@ -118,6 +118,14 @@ public final class AuthManager: @unchecked Sendable {
         }
     }
 
+    /// Drops the cached session/team so the next caller re-resolves them against the
+    /// currently active account. `MultiAccountManager` calls this after switching accounts.
+    public func invalidateCachedSession() {
+        self.session = nil
+        self.team = nil
+        debugLog("[AuthManager] Invalidated cached session and team.")
+    }
+
     public func getAuthenticatedTeam() async throws -> ALTTeam {
         if let team = self.team {
             return team
@@ -161,9 +169,17 @@ public final class AuthManager: @unchecked Sendable {
             skipResign: skipResign,
             skipHowTos: skipHowTos
         )
+        // Sign-in writes the shared keychain slots, so first preserve the account that is
+        // already signed in under its own namespace. That is what lets a second account be
+        // added without costing us the first.
+        await MultiAccountManager.shared.captureActiveAccountCredentials()
+
         let result = try await signInOperation.execute()
         self.team = result.team
         self.session = result.session
+
+        // ...and file the new account's credentials under its own namespace too.
+        MultiAccountManager.shared.registerCredentials(for: result)
         return result
     }
     

@@ -250,6 +250,13 @@ final class InstallAppOperation: BasePipelineOperation<InstallAppOperationContex
             if let team = Team.first(satisfying: teamPredicate, in: backgroundContext) {
                 installedApp.team = team
             }
+
+            // MultiStore: record which Apple ID signs this app. Refreshes, resigns and the
+            // per-account refresh pass all resolve the account from here, so an app always
+            // keeps the account (and therefore the team and certificate) it was installed with.
+            if let signingAccount = DatabaseManager.shared.activeAccount(in: backgroundContext) {
+                installedApp.signingAccount = signingAccount
+            }
             if let storeApp {
                 let storeAppInContext = backgroundContext.object(with: storeApp.objectID) as? StoreApp
                 installedApp.storeApp = storeAppInContext

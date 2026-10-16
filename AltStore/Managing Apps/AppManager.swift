@@ -565,7 +565,7 @@ final class AppManager: ObservableObject, @unchecked Sendable
         
         actualGroup.activeTask = Task.detached {
             do {
-                try await self.pipelineRunner.perform(installedApps.map { .refresh($0) }, handler: pipelineHandler, group: actualGroup)
+                try await self.performRefreshes(installedApps, handler: pipelineHandler, group: actualGroup)
             } catch {
                 actualGroup.error = error
                 let results = Dictionary(uniqueKeysWithValues: installedApps.map { ($0.bundleIdentifier, Result<InstalledApp, Error>.failure(error)) })
@@ -574,6 +574,109 @@ final class AppManager: ObservableObject, @unchecked Sendable
         }
         
         return actualGroup
+    }
+    
+    // MARK: - Multi-Account Refresh
+    
+    /// Refreshes `installedApps`, switching the signing account for each group of apps that
+    /// belongs to a different Apple ID.
+    ///
+    /// Every app remembers the account that signs it (`InstalledApp.signingAccount`). Apps
+    /// signed by the same account are refreshed in one pipeline pass; apps signed by another
+    /// account get their own pass. One account failing (expired session, revoked certificate,
+    /// bad password) records failures for its own apps only and lets the other accounts refresh.
+    private func performRefreshes(_ installedApps: [InstalledApp],
+                                  handler: PipelineExecutionHandler,
+                                  group: RefreshGroup) async throws
+    {
+        let partitions = await self.signingAccountPartitions(for: installedApps, in: group.dbContext)
+        
+        // Nothing account-specific to do: keep the original single-pass behaviour exactly,
+        // including for installs that predate multi-account and have no account bound yet.
+        if partitions.count <= 1 {
+            let apps = partitions.first?.apps ?? installedApps
+            try await self.pipelineRunner.perform(apps.map { .refresh($0) }, handler: handler, group: group)
+            return
+        }
+        
+        debugLog("[AppManager] performRefreshes: refreshing \(installedApps.count) apps across \(partitions.count) accounts")
+        
+        let accountToRestore = await MultiAccountManager.shared.activeAccountIdentifier(in: group.dbContext)
+        
+        do {
+            for partition in partitions {
+                if Task.isCancelled { throw OperationError.cancelled }
+                
+                if !partition.accountIdentifier.isEmpty {
+                    do {
+                        try await MultiAccountManager.shared.activateAccount(
+                            withIdentifier: partition.accountIdentifier,
+                            in: group.dbContext
+                        )
+                    } catch {
+                        debugLog("[AppManager] performRefreshes: failed to activate an account for signing: \(error)")
+                        self.recordFailure(error, for: partition.apps, in: group)
+                        continue
+                    }
+                }
+                
+                do {
+                    try await self.pipelineRunner.perform(partition.apps.map { .refresh($0) }, handler: handler, group: group)
+                } catch {
+                    if Task.isCancelled || error is CancellationError { throw error }
+                    if let operationError = error as? OperationError, case .cancelled = operationError { throw error }
+                    
+                    // Failure isolation: this account's apps fail, the remaining accounts still refresh.
+                    debugLog("[AppManager] performRefreshes: a refresh pass failed: \(error)")
+                    self.recordFailure(error, for: partition.apps, in: group)
+                }
+            }
+        } catch {
+            await self.restoreActiveAccount(accountToRestore, in: group.dbContext)
+            throw error
+        }
+        
+        // Hand the account back to the user's selection: switching is an implementation detail
+        // of signing, not a change to the app's active account setting.
+        await self.restoreActiveAccount(accountToRestore, in: group.dbContext)
+    }
+    
+    /// Groups `installedApps` by the Apple ID that signs them, preserving input order.
+    ///
+    /// An app with no bound account is signed by the active account, so it is grouped with it
+    /// rather than dropped.
+    private func signingAccountPartitions(for installedApps: [InstalledApp],
+                                          in dbContext: NSManagedObjectContext) async -> [(accountIdentifier: String, apps: [InstalledApp])]
+    {
+        return await dbContext.perform {
+            var order: [String] = []
+            var buckets: [String: [InstalledApp]] = [:]
+            let activeIdentifier = DatabaseManager.shared.activeAccount(in: dbContext)?.identifier ?? ""
+            
+            for app in installedApps {
+                // Read through this context: the apps handed to `refresh` may come from the view context.
+                let localApp = ((try? dbContext.existingObject(with: app.objectID)) as? InstalledApp) ?? app
+                let identifier = localApp.signingAccount?.identifier ?? activeIdentifier
+                
+                if buckets[identifier] == nil { order.append(identifier) }
+                buckets[identifier, default: []].append(localApp)
+            }
+            
+            return order.map { (accountIdentifier: $0, apps: buckets[$0] ?? []) }
+        }
+    }
+    
+    private func recordFailure(_ error: Error, for apps: [InstalledApp], in group: RefreshGroup)
+    {
+        for app in apps {
+            group.set(.failure(error), forAppWithBundleIdentifier: app.bundleIdentifier)
+        }
+    }
+    
+    private func restoreActiveAccount(_ accountIdentifier: String?, in dbContext: NSManagedObjectContext) async
+    {
+        guard let accountIdentifier = accountIdentifier, !accountIdentifier.isEmpty else { return }
+        try? await MultiAccountManager.shared.activateAccount(withIdentifier: accountIdentifier, in: dbContext)
     }
     
     func activate(_ installedApp: InstalledApp, presentingViewController: UIViewController?, completionHandler: @escaping (Result<InstalledApp, Error>) -> Void)
