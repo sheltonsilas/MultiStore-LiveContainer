@@ -175,3 +175,96 @@ public class Keychain
         debugLog("[Keychain] All Keychain items cleared.")
     }
 }
+
+// MARK: - Multi-Account Credentials
+
+public extension Keychain
+{
+    /// The set of keychain items that belong to a single Apple ID.
+    ///
+    /// Multi-account support keeps each account's session and signing identity in its
+    /// own keychain namespace, keyed by `Account.identifier` (which already has a
+    /// uniqueness constraint in Core Data). The legacy un-namespaced properties remain
+    /// the storage for the account that was signed in before this feature existed;
+    /// `migrateLegacyCredentials(to:)` copies them into that account's namespace once.
+    struct AccountCredentials
+    {
+        public var emailAddress: String?
+        public var password: String?
+        public var adsid: String?
+        public var xcodeToken: String?
+        public var signingCertificate: Data?
+        public var signingCertificatePassword: String?
+
+        public var isEmpty: Bool {
+            return self.emailAddress == nil && self.password == nil && self.adsid == nil &&
+                   self.xcodeToken == nil && self.signingCertificate == nil &&
+                   self.signingCertificatePassword == nil
+        }
+    }
+
+    /// Namespaces an account-scoped key, mirroring the existing `importedCert_<serial>` scheme.
+    private func accountScopedKey(_ accountIdentifier: String, _ suffix: String) -> String {
+        return "acct." + accountIdentifier + "." + suffix
+    }
+
+    subscript(credentialsFor accountIdentifier: String) -> AccountCredentials
+    {
+        get {
+            return AccountCredentials(
+                emailAddress: try? self.keychain.getString(self.accountScopedKey(accountIdentifier, "appleIDEmailAddress")),
+                password: try? self.keychain.getString(self.accountScopedKey(accountIdentifier, "appleIDPassword")),
+                adsid: try? self.keychain.getString(self.accountScopedKey(accountIdentifier, "appleIDAdsid")),
+                xcodeToken: try? self.keychain.getString(self.accountScopedKey(accountIdentifier, "appleIDXcodeToken")),
+                signingCertificate: try? self.keychain.getData(self.accountScopedKey(accountIdentifier, "signingCertificate")),
+                signingCertificatePassword: try? self.keychain.getString(self.accountScopedKey(accountIdentifier, "signingCertificatePassword"))
+            )
+        }
+        set {
+            let setString: (String, String?) -> Void = { key, value in
+                if let value = value { try? self.keychain.set(value, key: key) }
+                else { try? self.keychain.remove(key) }
+            }
+            let setData: (String, Data?) -> Void = { key, value in
+                if let value = value { try? self.keychain.set(value, key: key) }
+                else { try? self.keychain.remove(key) }
+            }
+
+            setString(self.accountScopedKey(accountIdentifier, "appleIDEmailAddress"), newValue.emailAddress)
+            setString(self.accountScopedKey(accountIdentifier, "appleIDPassword"), newValue.password)
+            setString(self.accountScopedKey(accountIdentifier, "appleIDAdsid"), newValue.adsid)
+            setString(self.accountScopedKey(accountIdentifier, "appleIDXcodeToken"), newValue.xcodeToken)
+            setData(self.accountScopedKey(accountIdentifier, "signingCertificate"), newValue.signingCertificate)
+            setString(self.accountScopedKey(accountIdentifier, "signingCertificatePassword"), newValue.signingCertificatePassword)
+        }
+    }
+
+    /// Removes every credential stored for `accountIdentifier`.
+    func clearCredentials(for accountIdentifier: String) {
+        self[credentialsFor: accountIdentifier] = AccountCredentials()
+        debugLog("[Keychain] Cleared credentials for account namespace.")
+    }
+
+    /// Copies the legacy single-account keychain items into `accountIdentifier`'s namespace.
+    ///
+    /// Upgrading users have their session and certificate in the un-namespaced keys.
+    /// This claims them for the currently active account exactly once; an account that
+    /// already has namespaced credentials is left untouched, so it is safe to call repeatedly.
+    func migrateLegacyCredentials(to accountIdentifier: String) {
+        guard !accountIdentifier.isEmpty else { return }
+        guard self[credentialsFor: accountIdentifier].isEmpty else { return }
+
+        var migrated = AccountCredentials()
+        migrated.emailAddress = self.appleIDEmailAddress
+        migrated.password = self.appleIDPassword
+        migrated.adsid = self.appleIDAdsid
+        migrated.xcodeToken = self.appleIDXcodeToken
+        migrated.signingCertificate = self.signingCertificate
+        migrated.signingCertificatePassword = self.signingCertificatePassword
+
+        guard !migrated.isEmpty else { return }
+
+        self[credentialsFor: accountIdentifier] = migrated
+        debugLog("[Keychain] Migrated legacy single-account credentials into the account namespace.")
+    }
+}
