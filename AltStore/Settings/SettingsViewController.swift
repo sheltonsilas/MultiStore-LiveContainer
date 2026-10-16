@@ -503,7 +503,11 @@ private extension SettingsViewController
         case .signIn:
             if isHeader
             {
-                settingsHeaderFooterView.primaryLabel.text = NSLocalizedString("ACCOUNT", comment: "")
+                // MultiStore: while an account is already signed in, this row adds another one
+                // rather than being the app's only way in.
+                settingsHeaderFooterView.primaryLabel.text = (self.activeTeam != nil)
+                    ? NSLocalizedString("ADD ACCOUNT", comment: "")
+                    : NSLocalizedString("ACCOUNT", comment: "")
             }
             else
             {
@@ -1003,7 +1007,7 @@ extension SettingsViewController
         switch section
         {
         case _ where isSectionHidden(section): return 0
-        case .signIn: return (self.activeTeam == nil) ? 1 : 0
+        case .signIn: return 1
         case .account: return (self.activeTeam == nil) ? 0 : (self.accountStatus == .completed ? 3 : 4)
         case .appRefresh: return AppRefreshRow.allCases.count
         case .advancedSettings: return AdvancedSettingsRow.allCases.count
@@ -1066,8 +1070,9 @@ extension SettingsViewController
         switch section
         {
         case _ where isSectionHidden(section): return nil
-        case .signIn where self.activeTeam != nil: return nil
         case .account where self.activeTeam == nil: return nil
+        // MultiStore: keep this section's header while signed in; the row below signs in an
+        // additional Apple ID instead of replacing the current one.
         case .signIn, .account, .patreon, .display, .appRefresh, .techyThings, .credits, .advancedSettings, .betaTesting, .diagnostics /* ,.macDirtyCow */:
             let headerView = tableView.dequeueReusableHeaderFooterView(withIdentifier: "HeaderFooterView") as! SettingsHeaderFooterView
             self.prepare(headerView, for: section, isHeader: true)
@@ -1100,7 +1105,6 @@ extension SettingsViewController
         switch section
         {
         case _ where isSectionHidden(section): return 1.0
-        case .signIn where self.activeTeam != nil: return 1.0
         case .account where self.activeTeam == nil: return 1.0
         case .signIn, .account, .patreon, .display, .appRefresh, .techyThings, .credits, .advancedSettings, .betaTesting, .diagnostics:
             let height = self.preferredHeight(for: self.prototypeHeaderFooterView, in: section, isHeader: true)

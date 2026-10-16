@@ -15,8 +15,12 @@ private nonisolated(unsafe) var appGroupsCache: [URL: (modDate: Date?, groups: [
 // @livecontainer
 private extension Bundle {
     @objc dynamic static let activeBundle: Bundle = Bundle.main
+    // The official SideStore app id as published by the built-in source (unchanged).
     @objc dynamic static let storeAppBundleIdentifier = "com.SideStore.SideStore"
-    @objc dynamic static let appbundleIdentifier = "com.SideStore.SideStore"
+    // MultiStore identity: must stay in step with BASE_BUNDLE_ID in Build.xcconfig. This one
+    // value drives the keychain namespace, the app group and self-refresh detection, so
+    // changing it is what keeps a MultiStore install from colliding with a SideStore one.
+    @objc dynamic static let appbundleIdentifier = "com.SideStore.MultiStore"
 }
 
 public extension Bundle
