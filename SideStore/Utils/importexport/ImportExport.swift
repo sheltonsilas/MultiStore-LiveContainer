@@ -11,6 +11,7 @@
 import SideSign
 import CryptoKit
 import CommonCrypto
+import UniformTypeIdentifiers
 
 enum BackupEncryptionError: Error, LocalizedError {
     case invalidPassword
@@ -169,27 +170,35 @@ class ImportExport {
         debugLog("Backup URL: \(backupURL)")
         debugLog("Document Picker URL: \(documentPickerURL)")
         
-        // Enumerate the contents of the selected directory and copy them to the backup directory.
-        let selectedContents = try fileManager.contentsOfDirectory(
-            at: documentPickerURL,
-            includingPropertiesForKeys: nil,
-            options: .skipsHiddenFiles
-        )
-        for itemURL in selectedContents {
-            let destinationURL = backupURL.appendingPathComponent(itemURL.lastPathComponent)
-            
-            // Remove the existing file if it exists at the destination.
-            if fileManager.fileExists(atPath: destinationURL.path) {
-                try fileManager.removeItem(at: destinationURL)
+        let isDirectory = (try? documentPickerURL.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+        if isDirectory {
+            // Enumerate the contents of the selected directory and copy them to the backup directory.
+            let selectedContents = try fileManager.contentsOfDirectory(
+                at: documentPickerURL,
+                includingPropertiesForKeys: nil,
+                options: .skipsHiddenFiles
+            )
+            for itemURL in selectedContents {
+                let destinationURL = backupURL.appendingPathComponent(itemURL.lastPathComponent)
+                
+                // Remove the existing file if it exists at the destination.
+                if fileManager.fileExists(atPath: destinationURL.path) {
+                    try fileManager.removeItem(at: destinationURL)
+                }
+                
+                // Copy the item.
+                try fileManager.copyItem(at: itemURL, to: destinationURL)
             }
-            
-            // Copy the item.
-            try fileManager.copyItem(at: itemURL, to: destinationURL)
+        } else if documentPickerURL.pathExtension.lowercased() == "zip" {
+            try fileManager.unzipArchive(at: documentPickerURL, to: backupURL)
+        } else {
+            throw OperationError.invalidParameters("Unsupported backup format: \(documentPickerURL.lastPathComponent)")
         }
     }
     
     public static func importBackup(presentingViewController: UIViewController,
                                     for installedApp: InstalledApp,
+                                    isZip: Bool = false,
                                     completionHandler: @escaping (Result<Void, Error>) -> Void){
         guard let backupURL = FileManager.default.backupDirectoryURL(for: installedApp) else {
             return completionHandler(.failure(OperationError.invalidParameters("Error: Backup directory URL not found.")))
@@ -226,7 +235,8 @@ class ImportExport {
         }
 
         #if !os(tvOS)
-        let documentPicker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder], asCopy: false)
+        let contentTypes: [UTType] = isZip ? [.zip] : [.folder]
+        let documentPicker = UIDocumentPickerViewController(forOpeningContentTypes: contentTypes, asCopy: isZip)
         documentPicker.allowsMultipleSelection = false
                 
         // Create a handler and set it as the delegate

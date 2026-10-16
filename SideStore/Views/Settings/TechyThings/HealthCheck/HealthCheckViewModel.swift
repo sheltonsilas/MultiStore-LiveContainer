@@ -105,7 +105,7 @@ final class HealthCheckViewModel: ObservableObject {
         let remotePeerIp = ConnectionConfig.shared.remotePeerIp
         let remoteReachable = ConnectionConfig.shared.remoteReachable
         
-        let pairingType = minimuxer.core.getPairingFileType()
+        let pairingType = minimuxer.core.pairingFileType
         let protocolStr: String
         switch pairingType {
         case .rppairing:

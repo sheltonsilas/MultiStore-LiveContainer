@@ -96,6 +96,7 @@ final class AppManager: ObservableObject, @unchecked Sendable
                     let isDeclared = UTType(app.installedAppUTI)?.isDeclared ?? false
                     guard !isDeclared, !legacyApps.contains(app.bundleIdentifier) else { continue }
 
+                    CacheResignedMetadataOperation.clearCustomizations(for: app)
                     dbBackgroundContext.delete(app)
                     if var patched = UserDefaults.standard.patchedApps {
                         patched.removeAll { $0 == app.bundleIdentifier }
@@ -456,7 +457,16 @@ final class AppManager: ObservableObject, @unchecked Sendable
             .install(app),
             handler: pipelineHandler,
             dbContext: dbContext,
-            completionHandler: completionHandler
+            completionHandler: { result in
+                if case .success(let installedApp) = result,
+                   UserDefaults.standard.isAutoLaunchAppAfterInstallEnabled,
+                   installedApp.bundleIdentifier != StoreApp.altstoreAppID {
+                    Task { @MainActor in
+                        UIApplication.shared.open(installedApp.openAppURL)
+                    }
+                }
+                completionHandler(result)
+            }
         )
     }
 
@@ -588,6 +598,17 @@ final class AppManager: ObservableObject, @unchecked Sendable
         let pipelineHandler = self.makePipelineHandler(presentingViewController: presentingViewController)
         let dbContext = self.getValidDbContext()
         self.pipelineRunner.performSingleOperation(.deleteApp(installedApp), handler: pipelineHandler, dbContext: dbContext, completionHandler: completionHandler)
+    }
+    
+    @discardableResult
+    func reinstall(_ installedApp: InstalledApp,
+                  presentingViewController: UIViewController?,
+                  completionHandler: @escaping (Result<InstalledApp, Error>) -> Void) -> RefreshGroup
+    {
+        debugLog("[AppManager] reinstall() called for app: \(installedApp.bundleIdentifier)")
+        let pipelineHandler = self.makePipelineHandler(presentingViewController: presentingViewController)
+        let dbContext = self.getValidDbContext()
+        return self.pipelineRunner.performSingleOperation(.reinstall(installedApp), handler: pipelineHandler, dbContext: dbContext, completionHandler: completionHandler)
     }
     
     @discardableResult
@@ -771,7 +792,7 @@ extension AppManager: PipelineProgress, PipelineExecutionContext, PipelineErrorL
         return self.progressLock.withLock {
             switch operation
             {
-            case .install, .update: 
+            case .install, .update, .reinstall: 
                 return self.installationProgress[bundleID]
             case .refresh, .activate, .deactivate, .deleteApp, .backup, .restore, .resign, .removeApp, .removeDeactivatedApp: 
                 return self.refreshProgress[bundleID]
@@ -788,7 +809,7 @@ extension AppManager: PipelineProgress, PipelineExecutionContext, PipelineErrorL
         self.progressLock.withLock {
             switch operation
             {
-            case .install, .update: 
+            case .install, .update, .reinstall: 
                 self.installationProgress[bundleID] = progress
             case .refresh, .activate, .deactivate, .deleteApp, .backup, .restore, .resign, .removeApp, .removeDeactivatedApp: 
                 self.refreshProgress[bundleID] = progress
@@ -815,6 +836,7 @@ extension AppManager: PipelineProgress, PipelineExecutionContext, PipelineErrorL
         switch operation
         {
             case .install:    localizedTitle = String(format: NSLocalizedString("Failed to Install %@",        comment: ""), appName)
+            case .reinstall:  localizedTitle = String(format: NSLocalizedString("Failed to Reinstall %@",      comment: ""), appName)
             case .refresh:    localizedTitle = String(format: NSLocalizedString("Failed to Refresh %@",        comment: ""), appName)
             case .update:     localizedTitle = String(format: NSLocalizedString("Failed to Update %@",         comment: ""), appName)
             case .activate:   localizedTitle = String(format: NSLocalizedString("Failed to Activate %@",       comment: ""), appName)

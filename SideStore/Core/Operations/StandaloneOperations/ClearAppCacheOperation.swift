@@ -138,8 +138,7 @@ class ClearAppCacheOperation: BaseStandaloneOperation<StandaloneOperationContext
     private func removeBackupDirItems(at url: URL, installedBundleIDs: Set<String>, coordinatorError: Error?) throws {
         if let coordinatorError { throw coordinatorError }
         
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+        guard let resourceValues = try? url.resourceValues(forKeys: [.isDirectoryKey]), resourceValues.isDirectory == true else {
             self.setProgress(90)
             return
         }

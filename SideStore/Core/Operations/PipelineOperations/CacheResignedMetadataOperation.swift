@@ -108,4 +108,22 @@ final class CacheResignedMetadataOperation: BasePipelineOperation<InstallAppOper
             }
         }
     }
+    
+    static func clearCustomizations(for app: InstalledApp) {
+        guard UserDefaults.standard.isClearCustomizationsOnUninstallEnabled else { return }
+        
+        let bundleID = app.bundleIdentifier
+        let resignedBundleID = app.resignedBundleIdentifier
+        let appDirectoryURL = app.directoryURL
+        
+        ProfileManager.shared.setAssignedProfile(nil, for: bundleID)
+        if resignedBundleID != bundleID {
+            ProfileManager.shared.setAssignedProfile(nil, for: resignedBundleID)
+        }
+        
+        if FileManager.default.fileExists(atPath: appDirectoryURL.path) {
+            try? FileManager.default.removeItem(at: appDirectoryURL)
+            SideStore.debugLog("[CacheResignedMetadataOperation] Cleared cached app directory: \(appDirectoryURL.path)")
+        }
+    }
 }

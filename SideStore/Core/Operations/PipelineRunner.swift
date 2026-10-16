@@ -325,12 +325,17 @@ final class PipelineRunner: Sendable
         context.isCellularRefreshGroup = group.isCellularRefreshGroup
         context.groupOperationsCount = operationsCount
         
-        if case .install(_, let customID) = operation { context.customBundleIdentifier  = customID }
-        if case .update(_,  let customID) = operation {
-            context.customBundleIdentifier  = customID
-            context.isStoreUpdate = true
+        switch operation {
+            case .install(_, let customID), .reinstall(_, let customID):
+                context.customBundleIdentifier = customID
+            case .update(_, let customID):
+                context.customBundleIdentifier = customID
+                context.isStoreUpdate = true
+            case .resign(_, let mode):
+                context.alternateIconMode = mode
+            default:
+                break
         }
-        if case .resign(_,  let mode)     = operation { context.alternateIconMode       = mode }
         
         if let app = operation.app as? InstalledApp {
             context.installedApp = app
@@ -354,7 +359,7 @@ final class PipelineRunner: Sendable
         
         let permissionReviewMode: PermissionReviewMode
         switch operation {
-            case .install: permissionReviewMode = .all
+            case .install, .reinstall: permissionReviewMode = .all
             case .update: permissionReviewMode = .added
             default: permissionReviewMode = .none
         }

@@ -1,5 +1,5 @@
 {
-  "originHash" : "69ef50e98469f665fd222dd23c3fdcdd9d71e0ff7e9c23097cb0742a7b0fc571",
+  "originHash" : "7f482fba8fa6b0b7ca118621a37366c67b88dd615017766ff3bbb30980f2eda6",
   "pins" : [
     {
       "identity" : "anisettekit",
@@ -7,13 +7,13 @@
       "location" : "https://github.com/mahee96/AnisetteKit.git",
       "state" : {
         "branch" : "main",
-        "revision" : "1f5a7e36553cc865b873f222b87a6486c0bcc7bf"
+        "revision" : "db8b41022697b6c19be8a5f01a1ce834145a2a26"
       }
     },
     {
       "identity" : "codesignkit",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/mahee96/CodeSignKit.git",
+      "location" : "https://github.com/mahee96/CodeSignKit",
       "state" : {
         "branch" : "main",
         "revision" : "d0c67710fda9a2646b9e829cb2cf443892728371"
