@@ -199,6 +199,44 @@ public class DatabaseManager: @unchecked Sendable
         return activeTeam
     }
 
+    // MARK: - Multi-Account Resolution
+
+    /// Every account known to this install, ordered by Apple ID for stable display.
+    public func allAccounts(in context: NSManagedObjectContext) -> [Account]
+    {
+        let fetchRequest = Account.fetchRequest() as NSFetchRequest<Account>
+        fetchRequest.sortDescriptors = [NSSortDescriptor(keyPath: \Account.appleID, ascending: true)]
+        return (try? context.fetch(fetchRequest)) ?? []
+    }
+
+    public func account(withIdentifier identifier: String, in context: NSManagedObjectContext) -> Account?
+    {
+        let predicate = NSPredicate(format: "%K == %@", #keyPath(Account.identifier), identifier)
+        return Account.first(satisfying: predicate, in: context)
+    }
+
+    /// Resolves the account that should sign `app`.
+    ///
+    /// An app explicitly bound to an account always uses it. An unbound app falls back to
+    /// the active account, so installs that predate multi-account (or were made before an
+    /// account was bound) behave exactly as they did before.
+    public func signingAccount(for app: InstalledApp, in context: NSManagedObjectContext) -> Account?
+    {
+        if let boundAccount = app.signingAccount { return boundAccount }
+        return self.activeAccount(in: context)
+    }
+
+    /// The team belonging to `account` that should be used when signing.
+    ///
+    /// The active account keeps using the active team so existing signing limits and
+    /// entitlements are unchanged; any other account uses its own first team.
+    public func signingTeam(for account: Account, in context: NSManagedObjectContext) -> Team?
+    {
+        if account.isActiveAccount, let activeTeam = self.activeTeam(in: context) { return activeTeam }
+        return account.teams.sorted { $0.identifier < $1.identifier }.first
+    }
+
+
     private func prepareDatabase() async throws
     {
         guard !Bundle.isAppExtension() else { return }

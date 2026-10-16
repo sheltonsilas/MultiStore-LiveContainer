@@ -430,3 +430,47 @@ private extension CertificateManager {
         }
     }
 }
+
+// MARK: - Multi-Account Certificate Access
+
+public extension CertificateManager
+{
+    /// Loads the signing certificate stored in `accountIdentifier`'s keychain namespace.
+    ///
+    /// Deliberately does not touch the shared `activeCertificate` cache: with several
+    /// accounts refreshing concurrently, a single-slot cache would let one account
+    /// clobber another's certificate.
+    func loadCertificate(for accountIdentifier: String) throws -> ActiveSigningCertificate?
+    {
+        let credentials = Keychain.shared[credentialsFor: accountIdentifier]
+        guard let data = credentials.signingCertificate else {
+            debugLog("[CertificateManager] loadCertificate(for:): no certificate stored for this account.")
+            return nil
+        }
+        let cert = try Self.parse(data, password: credentials.signingCertificatePassword)
+        debugLog("[CertificateManager] loadCertificate(for:): loaded certificate (serial: \(cert.serialNumber)).")
+        return ActiveSigningCertificate(certificate: cert, p12Data: data, password: credentials.signingCertificatePassword)
+    }
+
+    /// Stores `cert` in `accountIdentifier`'s namespace, leaving every other account's
+    /// certificate untouched. Passing `nil` clears only this account's certificate and
+    /// keeps its sign-in session intact.
+    func setCertificate(_ cert: ALTCertificate?, for accountIdentifier: String) throws
+    {
+        var credentials = Keychain.shared[credentialsFor: accountIdentifier]
+
+        if let cert = cert {
+            let password = self.getPassword(for: cert)
+            credentials.signingCertificate = try Self.convert(cert, password: password)
+            credentials.signingCertificatePassword = password
+            self.saveCertificate(cert)
+            debugLog("[CertificateManager] setCertificate(for:): stored certificate (serial: \(cert.serialNumber)).")
+        } else {
+            credentials.signingCertificate = nil
+            credentials.signingCertificatePassword = nil
+            debugLog("[CertificateManager] setCertificate(for:): cleared certificate for this account.")
+        }
+
+        Keychain.shared[credentialsFor: accountIdentifier] = credentials
+    }
+}
