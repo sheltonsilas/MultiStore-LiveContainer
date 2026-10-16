@@ -34,6 +34,8 @@ public class Account: BaseEntity
     
     /* Relationships */
     @NSManaged public var teams: Set<Team>
+    /// Apps bound to this account as their signing identity (multi-account support).
+    @NSManaged public var installedApps: Set<InstalledApp>
     
     private override init(entity: NSEntityDescription, insertInto context: NSManagedObjectContext?)
     {

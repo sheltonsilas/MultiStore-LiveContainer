@@ -181,6 +181,9 @@ public class InstalledApp: BaseEntity, InstalledAppProtocol
     /* Relationships */
     @NSManaged public var storeApp: StoreApp?
     @NSManaged public var team: Team?
+    /// Apple developer account that signed this app and must refresh it.
+    /// `nil` falls back to the active account, preserving single-account behaviour.
+    @NSManaged public var signingAccount: Account?
     @NSManaged public var releaseTrack: ReleaseTrack?
     @NSManaged public var appExtensions: Set<InstalledExtension>
     
